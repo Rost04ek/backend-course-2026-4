@@ -4,8 +4,8 @@ const { program } = require('commander');
 const { XMLBuilder } = require('fast-xml-parser');
 
 program
-  .requiredOption('-i, --input <path>', 'Iлях до файлу для читання')
-  .requiredOption('-h, --host <host>', 'Aдреса сервера')
+  .requiredOption('-i, --input <path>', 'Шлях до файлу для читання')
+  .requiredOption('-h, --host <host>', 'Адреса сервера')
   .requiredOption('-p, --port <port>', 'Порт сервера');
 
 program.configureOutput({
@@ -37,39 +37,36 @@ async function startServer() {
     try {
       const url = new URL(req.url, `http://${options.host}:${options.port}`);
       
-      // Параметри для Варіанту 2
       const showDate = url.searchParams.get('date') === 'true';
       const airtimeMinParam = url.searchParams.get('airtime_min');
       
-      // Читаємо весь файл як один великий текст
       const rawData = await fs.readFile(options.input, 'utf-8');
       
-      // РОЗБИРАЄМО ФОРМАТ NDJSON (кожен рядок - це окремий JSON)
       const jsonData = rawData
-        .split('\n') // Розбиваємо текст на масив рядків
-        .filter(line => line.trim() !== '') // Відкидаємо порожні рядки (наприклад, у кінці файлу)
-        .map(line => JSON.parse(line)); // Парсимо кожен рядок як окремий об'єкт
+        .split('\n') 
+        .filter(line => line.trim() !== '') 
+        .map(line => JSON.parse(line));
 
       let processedData = jsonData;
 
-      // Логіка фільтрації
       if (airtimeMinParam !== null) {
         const airtimeMin = parseFloat(airtimeMinParam);
         if (!isNaN(airtimeMin)) {
-          processedData = processedData.filter(flight => parseFloat(flight.AIR_TIME) > airtimeMin);
+          processedData = processedData.filter(flight => {
+            if (flight.AIR_TIME === undefined || flight.AIR_TIME === null) return false;
+            return parseFloat(flight.AIR_TIME) > airtimeMin;
+          });
         }
       }
 
-      // Формування вихідних полів
       const finalData = processedData.map(flight => {
         const result = {};
-        if (showDate) result.FL_DATE = flight.FL_DATE;
-        if (airtimeMinParam !== null) result.AIR_TIME = flight.AIR_TIME;
-        result.DISTANCE = flight.DISTANCE;
+        if (showDate && flight.FL_DATE !== undefined) result.FL_DATE = flight.FL_DATE;
+        if (airtimeMinParam !== null && flight.AIR_TIME !== undefined) result.AIR_TIME = flight.AIR_TIME;
+        if (flight.DISTANCE !== undefined) result.DISTANCE = flight.DISTANCE;
         return result;
       });
 
-      // Формуємо XML
       const builder = new XMLBuilder({
         format: true,
         ignoreAttributes: false
@@ -82,6 +79,8 @@ async function startServer() {
       };
       
       const xmlContent = builder.build(xmlObj);
+
+      await fs.writeFile('output.xml', xmlContent, 'utf-8');
 
       res.writeHead(200, { 'Content-Type': 'application/xml' });
       res.end(xmlContent);
