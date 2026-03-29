@@ -33,19 +33,29 @@ async function checkFileExists(filePath) {
 async function startServer() {
   await checkFileExists(options.input);
 
+  const rawData = await fs.readFile(options.input, 'utf-8');
+  const jsonData = rawData
+    .split('\n')
+    .filter(line => line.trim() !== '')
+    .map(line => JSON.parse(line));
+
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${options.host}:${options.port}`);
       
       const showDate = url.searchParams.get('date') === 'true';
       const airtimeMinParam = url.searchParams.get('airtime_min');
-      
-      const rawData = await fs.readFile(options.input, 'utf-8');
-      
-      const jsonData = rawData
-        .split('\n') 
-        .filter(line => line.trim() !== '') 
-        .map(line => JSON.parse(line));
+      const limitParam = url.searchParams.get('limit');
+
+      let limit = null;
+      if (limitParam !== null) {
+        limit = parseInt(limitParam, 10);
+        if (!Number.isInteger(limit) || limit <= 0) {
+          res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+          res.end('Invalid limit. Use a positive integer, for example: ?limit=100');
+          return;
+        }
+      }
 
       let processedData = jsonData;
 
@@ -57,6 +67,10 @@ async function startServer() {
             return parseFloat(flight.AIR_TIME) > airtimeMin;
           });
         }
+      }
+
+      if (limit !== null) {
+        processedData = processedData.slice(0, limit);
       }
 
       const finalData = processedData.map(flight => {
